@@ -1,110 +1,103 @@
 
-# 📜 Documentação - Extração de Chave da Cifra de Vigenère
+# 📄 Documentação do Código — Descoberta de Chave na Cifra de Hill NxN
 
-## 📌 Objetivo
+## 📜 Descrição Geral
 
-Este script tem como objetivo **extrair a chave utilizada em uma cifra de Vigenère**, dado o texto aberto (plaintext) e o texto cifrado (ciphertext), ambos conhecidos, além do tamanho da chave.
+Este código tem como objetivo **descobrir a chave (matriz K)** utilizada na cifra de Hill de tamanho NxN, a partir de um texto conhecido em claro (`plain`) e seu correspondente texto cifrado (`cipher`).
+
+O processo se baseia na propriedade fundamental da cifra de Hill:
+
+> **C = K × P (mod m)**  
+> Onde:
+> - C = bloco cifrado (matriz)
+> - P = bloco de texto claro (matriz)
+> - K = chave (matriz NxN)
+
+A chave pode ser obtida por:
+> **K = C × P⁻¹ (mod m)**  
+(se P é invertível módulo m)
 
 ---
 
-## 🚀 Descrição do Funcionamento
+## 📂 Organização do Código
 
-### 1️⃣ **Importação de Dependências**
+### 🔗 Importações
 ```python
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils import normalize, text_to_numeric, numeric_to_text
+from utils import normalize, text_to_numeric, chunkify, modinv_matrix
+import numpy as np
 ```
-- Insere o diretório pai no caminho (`sys.path`) para importar funções auxiliares (`utils.py`).
-- Funções utilizadas do módulo `utils`:
-  - `normalize`: normaliza texto (ex.: remover acentos e caracteres inválidos).
+
+- Adiciona o diretório pai ao path (`sys.path.append`) para importar funções utilitárias de `utils.py`:
+  - `normalize`: remove acentos, espaços e coloca em minúsculas.
   - `text_to_numeric`: converte texto para lista de números (a=0, b=1, ..., z=25).
-  - `numeric_to_text`: faz o caminho inverso, converte números para texto.
+  - `chunkify`: divide listas em blocos.
+  - `modinv_matrix`: calcula a matriz inversa módulo 26.
 
 ---
 
-### 2️⃣ **Extração da Chave**
+### 📑 Carregamento dos Dados
 ```python
-def extract_vigenere_key(plain_text, cipher_text, key_length):
-    plain_n = text_to_numeric(normalize(plain_text))
-    cipher_n = text_to_numeric(normalize(cipher_text))
+block_size = 4
 
-    key = [ (c - p) % 26 for p, c in zip(plain_n, cipher_n) ]
+with open("/path/aberto.txt") as f:
+    plain = f.read().strip()
+with open("/path/cifrado.txt") as f:
+    cipher = f.read().strip()
+```
 
-    final_key = [ key[i] for i in range(key_length) ]
+- Define o tamanho do bloco (NxN).
+- Carrega texto claro (`plain`) e texto cifrado (`cipher`) a partir de arquivos.
 
-    return final_key, numeric_to_text(final_key)
-```
-- A cifra de Vigenère funciona como:
-```plaintext
-c_i = (p_i + k_i) mod 26
-```
-- Para extrair a chave:
-```plaintext
-k_i = (c_i - p_i) mod 26
-```
-- O vetor `key` contém a chave **expandida** (repetida até o tamanho do texto).
-- A linha:
+---
+
+### 🔄 Pré-processamento
 ```python
-final_key = [ key[i] for i in range(key_length) ]
+plain_n = text_to_numeric(normalize(plain))
+cipher_n = text_to_numeric(normalize(cipher))
 ```
-- Extrai a chave **original**, com comprimento igual a `key_length`.
+- Normaliza (remove espaços, acentos e transforma em minúsculas).
+- Converte textos para listas de números (inteiros de 0 a 25).
 
 ---
 
-### 3️⃣ **Expansão da Chave**
+## 🔍 Função Principal — `find_valid_hill_key()`
 ```python
-def expand_vigenere_key(key_text, length):
-    repeats = (length + len(key_text) - 1) // len(key_text)
-    return (key_text * repeats)[:length]
+def find_valid_hill_key(plain_n, cipher_n, block_size, mod=26):
 ```
-- Expande uma chave de tamanho fixo até o tamanho do texto.
-- A expansão é cíclica.
+- Procura um bloco de texto claro (`P_block`) que seja **invertível módulo 26**.
+- A cada tentativa:
+  - Extrai um bloco de tamanho NxN do texto claro e do cifrado.
+  - Calcula a inversa módulo 26 de `P_block`.
+  - Obtém a chave pela fórmula: **K = (C_block × P_inv) mod 26**.
+
+Se um bloco válido for encontrado, retorna:
+- A matriz chave `K`.
+- O índice inicial do bloco dentro do texto (`start_idx`).
+
+Caso nenhum bloco válido seja encontrado, levanta uma exceção.
 
 ---
 
-### 4️⃣ **Leitura dos Arquivos**
+### 🚀 Execução
 ```python
-with open(..._texto_aberto.txt) as f: plain = f.read().strip()
-with open(..._texto_cifrado.txt) as f: cipher = f.read().strip()
-with open(..._key.txt) as f: key_cipher = f.read().strip()
+K_NxN, start_idx = find_valid_hill_key(plain_n, cipher_n, block_size=block_size)
+print(f"Chave encontrada (a partir do índice {start_idx}):
+{K_NxN}")
 ```
-- Lê três arquivos:
-  - Texto aberto.
-  - Texto cifrado.
-  - Chave correta (para verificação).
+- Executa a função e imprime a chave encontrada e o índice onde ela foi extraída.
 
 ---
 
-### 5️⃣ **Processamento Principal**
-```python
-key_nums, key_text = extract_vigenere_key(plain, cipher, key_length=k_len)
-key_expanded = expand_vigenere_key(key_text, text_length)
-```
-- Extrai a chave (`key_text`).
-- Gera a chave expandida (`key_expanded`) para comparar com a chave verdadeira.
+## ✅ Observações Importantes
+- O método funciona apenas se houver no texto claro um bloco NxN cuja matriz seja **invertível módulo 26**.
+- Caso contrário, será necessário:
+  - Usar outros blocos.
+  - Ou empregar métodos de ataque mais avançados (heurísticos, força bruta ou análise estatística).
 
 ---
 
-### 6️⃣ **Validação e Impressão dos Resultados**
-```python
-print(f"🔐 Chave Vigenère (tamanho {k_len}): {key_text}")
-print(f"🔐 Chave Vigenère Expandida (tamanho {k_len}): {key_expanded}")
-print(f"Chaves idênticas: {key_cipher == key_expanded}")
-```
-- Valida se a chave extraída, quando expandida, é idêntica à chave real fornecida.
-
----
-
-## ✔️ Resultado Esperado
-
-- Impressão da chave extraída.
-- Verificação se a chave expandida bate com a chave real do arquivo.
-
----
-
-## 💡 Observações
-
-- O script assume que o tamanho da chave (`k_len`) é conhecido.
-- O sucesso depende de ambos os textos (aberto e cifrado) estarem bem alinhados e normalizados.
+## 🧠 Conclusão
+Este código implementa a base matemática fundamental da criptanálise conhecida como **ataque de texto claro conhecido** para a cifra de Hill NxN.
