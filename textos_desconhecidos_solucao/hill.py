@@ -138,13 +138,20 @@ def encontrar_candidatos_ab(blocks, c, top_n=20):
 
 def avaliar_klinha(args):
     a, b, c, score_ab_c, x, y, z, linha2, linha3, blocks = args
-    key_inv = np.array([
+    key = np.array([
         [x, y, z],
-        linha2,
-        linha3
+        [0, a, b],
+        [0, 0, c]
     ])
-    key = modinv_matrix(key_inv)
-    if key is None:
+    # Matriz inversa real conhecida (K⁻¹)
+    K_REAL_INV = np.array([
+        [7, 19, 14],
+        [0, 21, 11],
+        [0,  0,  9]
+    ])
+    key_inv = modinv_matrix(key)
+
+    if key_inv is None:
         print("Chave inválida")
         return None
     try:
@@ -155,18 +162,10 @@ def avaliar_klinha(args):
             [ 0, 25, 11],
             [ 0,  0,  3]
         ])
-#        if not heuristica_rapida(plaintext):
-#            print("Não passou na heuristica")
-#            return None
         chi2 = chi_squared_score(plaintext)
-        word_cov_score = word_coverage_ratio(plaintext, PORT_WORDS)
-        #combined = (1 / (chi2 + 1e-5)) * word_score
-        #combined = normalize(word_score) - normalize(chi2)
-        #print(f"retornando: {plaintext} {chi2} {word_cov_score}")
-        if key is not None and np.array_equal(key, CHAVE_REAL):
-          print(f"\nTexto real: {plaintext}")
-          print("→ ACHOU com word score:", word_cov_score)
-        return (plaintext, chi2, word_cov_score, key.tolist())
+        word_cov_score = word_coverage_ratio(plaintext, PORT_WORDS)        
+
+        return (plaintext, chi2, word_cov_score, key_inv.tolist(), key)
     except Exception as e:
         print("Erro ao avaliar klinha: ", e)
         return None
@@ -186,18 +185,28 @@ def testar_primeira_linha(candidatos_ab_c, blocks, top_n=5):
 
     print("[*] Preparando tarefas para paralelismo...")
     for (a, b, c, score_ab_c) in candidatos_ab_c:
-        inv_c = pow(c, -1, MOD)
-        inv_a = pow(a, -1, MOD)
-        linha2 = [0, inv_a, (-b * inv_a * inv_c) % MOD]
-        linha3 = [0, 0, inv_c]
+        # Validar que a e c são invertíveis no mod 26
+        if np.gcd(a, MOD) != 1 or np.gcd(c, MOD) != 1:
+            continue
+        try:
+            inv_c = pow(c, -1, MOD)
+            inv_a = pow(a, -1, MOD)
+        except ValueError:
+            continue  # pula se não tiver inverso
 
+        # Construir segunda e terceira linha da inversa de K
+        # Fórmula correta para triangular superior
+        # linha2 = [0, 1/a, -b / (a * c)]
+        linha2 = [0, inv_a % MOD, (-b * inv_a * inv_c) % MOD]
+        linha3 = [0, 0, inv_c % MOD]
+
+        # Gerar todas as combinações possíveis para a primeira linha (x, y, z)
         for x in invs:
             for y in range(MOD):
                 for z in invs:
-                    tarefas.append((a, b, c, score_ab_c, x, y, z, linha2, linha3, blocks))
+                      tarefas.append((a, b, c, score_ab_c, x, y, z, linha2, linha3, blocks))
 
     print(f"[*] Total de combinações a testar: {len(tarefas)}")
-
     with ProcessPoolExecutor() as executor:
         all_results = list(tqdm(
             executor.map(avaliar_klinha, tarefas),
@@ -205,40 +214,21 @@ def testar_primeira_linha(candidatos_ab_c, blocks, top_n=5):
             desc="Testando primeira linha"
         ))
 
-
-    # Filtrar Nones
-    print(f"Recebidos {len(all_results)} resultados\nIniciando filtragem.")
+    print(f"[*] Resultados recebidos: {len(all_results)}")
     resultados_tpl1 = all_results
-    #resultados = [r for r in all_results if r is not None]
-    # Extrair valores de chi2 e word_score
-    # chi2_vals = [r[1] for r in resultados]
-    # wscore_vals = [r[2] for r in resultados]
 
-    # chi2_min, chi2_max = min(chi2_vals), max(chi2_vals)
-    # wscore_min, wscore_max = min(wscore_vals), max(wscore_vals)
+    # Filtrar e ordenar os resultados válidos
+    resultados_validos = [r for r in all_results if r is not None]
+    resultados_validos.sort(key=lambda x: -x[2])  # ordenar por word score (x[2]) decrescente
 
-    # # Calcular score normalizado e armazenar como novo campo
-    # resultados_com_score = []
-    # for r in resultados:
-    #     chi2_norm = normalize(r[1], chi2_min, chi2_max)
-    #     wscore_norm = normalize(r[2], wscore_min, wscore_max)
-    #     combined_score = wscore_norm - chi2_norm  # ou qualquer outra fórmula
-    #     resultados_com_score.append((r[0], combined_score, r[1], r[2], r[3]))
+    return resultados_validos[:top_n]
 
-    # # Ordenar pelo score normalizado (do maior para o menor)
-    # resultados_com_score.sort(key=lambda x: -x[1])
-
-    # resultados_tpl2 = resultados_com_score
-    # Obter os top N
-    #return resultados_com_score[:top_n]
-    print(all_results[:5])
-    final=all_results.sort(key=lambda x: -x[2])
-    return final
 
 # Função principal orquestradora
 candidatos_ab_c = []
 resultados_finais = []
 def ataque_hill_otimizado(ciphertext, max_c=10, max_ab=20, top_k=5):
+    global resultados_finais
     print("[+] Convertendo texto para números...")
     nums = text_to_numbers(ciphertext)
     blocks = gerar_blocos(nums)
@@ -246,7 +236,6 @@ def ataque_hill_otimizado(ciphertext, max_c=10, max_ab=20, top_k=5):
     print("[+] Encontrando candidatos para c...")
     candidatos_c = encontrar_candidatos_c(blocks, top_n=max_c)
     print(f"    Encontrados {len(candidatos_c)} candidatos para c.")
-
     candidatos_ab_c = []
     for c, score_c in tqdm(candidatos_c, desc="[*] Avaliando candidatos (a,b) para cada c"):
         ab_candidates = encontrar_candidatos_ab(blocks, c, top_n=max_ab)
@@ -260,11 +249,10 @@ def ataque_hill_otimizado(ciphertext, max_c=10, max_ab=20, top_k=5):
     resultados = testar_primeira_linha(candidatos_ab_c, blocks, top_n=top_k)
     resultados_finais = resultados
     print("[+] Resultados obtidos:")
-    for idx, (text, combined, chi2, wscore, key) in enumerate(resultados[:10]):
+    for idx, (text, chi2, wscore, key_inv, key) in enumerate(resultados):
         print(f"Resultado #{idx+1}")
         print(f"Texto: {text}")
-        print(f"Pontuação combinada: {combined:.4f}, Chi-quadrado: {chi2:.2f}, Palavras conhecidas: {wscore:.2f}")
-        print(f"Chave inversa (mod 26):\n{np.array(key)}\n")
+        print(f"Chave:\n{np.array(key)}\n")
     return resultados
 
 def testar_chave_hardcoded(ciphertext, chave):
@@ -293,9 +281,6 @@ def testar_chave_hardcoded(ciphertext, chave):
 
     chi2 = chi_squared_score(plaintext)
     word_cov_score = word_coverage_ratio(plaintext, PORT_WORDS)
-#    combined = (1 / (chi2 + 1e-5)) * word_score  # Score combinado
-    #resultados_tpl1 = resultados
-    # Extrair valores de chi2 e word_score
     chi2_vals = [r[1] for r in resultados_tpl1]
     wscore_vals = [r[2] for r in resultados_tpl1]
 
@@ -312,7 +297,6 @@ def testar_chave_hardcoded(ciphertext, chave):
     print(f"→ Texto: {plaintext}")
     print(f"→ Chi-quadrado: {chi2:.4f}")
     print(f"→ Combined score: {combined_score:.4f}")
-#    print(f"→ Pontuação combinada: {combined:.4f}")
     return (plaintext, word_cov_score)
 
 
