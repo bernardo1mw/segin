@@ -21,7 +21,7 @@ PORT_FREQ = {
     'y': 0.0001
 }
 
-PORT_WORDS = set(floresta.words())
+PORT_WORDS = set(w.lower() for w in floresta.words() if w.isalpha())
 # Conjunto de palavras comuns em português (pode expandir com dicionário melhor)
 #with open("floresta_words.txt", "r", encoding="utf-8") as f:
 #    PORT_WORDS = set(line.strip() for line in f if len(line.strip()) > 2)
@@ -136,6 +136,17 @@ def encontrar_candidatos_ab(blocks, c, top_n=20):
 
 # --- Fase 3: Para cada (a,b,c), encontrar candidatos para primeira linha (x,y,z) ---
 
+def count_known_words(text, min_len=3):
+    total = 0
+    matches = 0
+    for i in range(len(text)):
+        for j in range(i + min_len, min(len(text) + 1, i + 12)):
+            if text[i:j] in PORT_WORDS:
+                matches += 1
+                break
+        total += 1
+    return matches / total if total else 0
+
 def avaliar_klinha(args):
     a, b, c, score_ab_c, x, y, z, linha2, linha3, blocks = args
     key = np.array([
@@ -164,8 +175,8 @@ def avaliar_klinha(args):
         ])
         chi2 = chi_squared_score(plaintext)
         word_cov_score = word_coverage_ratio(plaintext, PORT_WORDS)        
-
-        return (plaintext, chi2, word_cov_score, key_inv.tolist(), key)
+        score = count_known_words(plaintext)
+        return (plaintext, chi2, score, key_inv.tolist(), key)
     except Exception as e:
         print("Erro ao avaliar klinha: ", e)
         return None
@@ -227,7 +238,7 @@ def testar_primeira_linha(candidatos_ab_c, blocks, top_n=5):
 # Função principal orquestradora
 candidatos_ab_c = []
 resultados_finais = []
-def ataque_hill_otimizado(ciphertext, max_c=10, max_ab=20, top_k=5):
+def ataque_hill_otimizado(ciphertext, max_c=10, max_ab=20, top_k=10):
     global resultados_finais
     print("[+] Convertendo texto para números...")
     nums = text_to_numbers(ciphertext)
@@ -302,9 +313,9 @@ def testar_chave_hardcoded(ciphertext, chave):
 
 # Exemplo de uso
 if __name__ == "__main__":
-    aberto = "vacomospaistoqueiointerfoneumavozfemininaatendeuenaoeraadesahariennedisseumpodesubiroportaoseabriumeolheinoespelhodoelev"
-    fechado = "nwgimqvlapjfiwisqquofqmpjfmcoakbxbykrxynaaijnliivnafbzphjqiaifzzjnydjkycwikstjmuioxzfjqchaeamgezeikxdhlgytempdmurqzemgtl"
-    chave = np.array([[15, 25, 5], [0, 25, 11], [0, 0, 3]])  # para validar se quiser testar
+#    aberto = "vacomospaistoqueiointerfoneumavozfemininaatendeuenaoeraadesahariennedisseumpodesubiroportaoseabriumeolheinoespelhodoelev"
+    fechado = "wguhcyvnacewzlqhozgqitplnpaxzgvrercaaccphgvgcouwciulcaqezqycssircanuaocdkquwyzkqinhducqzyccqelrqylgnbqlonfgufpliiaaspuye"
+#    chave = np.array([[15, 25, 5], [0, 25, 11], [0, 0, 3]])  # para validar se quiser testar
     #testar_chave_hardcoded(fechado, chave)
 
 
